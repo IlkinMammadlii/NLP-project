@@ -1,0 +1,399 @@
+% What the Cache Forgets / Sharpens -- ACL long paper (8 pages + limitations + appendix).
+% Build: bash build_paper.sh (repo root) -> paper.pdf and course_paper.pdf.
+% EVERY result number comes from ../../tables/*.tex (written by make_results.py); nothing is typed by hand.
+% The pre-registered verdict was inconclusive (RESULTS.md); the text below states it directly.
+\documentclass[11pt]{article}
+
+% ---- where the generated tables/figures live (repo root when built in place; ./ in the Overleaf zip)
+\makeatletter
+\IfFileExists{tables/macros.tex}{\def\resultsdir{}}{\def\resultsdir{../../}}
+\makeatother
+
+% ---- ACL style if present (build_paper.sh fetches it); otherwise a close article fallback
+\IfFileExists{acl.sty}{%
+  \usepackage[final]{acl}%
+}{%
+  \usepackage[margin=2.5cm]{geometry}%
+  \usepackage[round]{natbib}%
+  \usepackage{times}%
+}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{makecell}
+\usepackage{adjustbox}
+\usepackage{xcolor}
+\usepackage{url}
+
+% course version: build_paper.sh compiles with \def\COURSE{1}
+\newif\ifcourse
+\ifdefined\COURSE \coursetrue \fi
+
+\input{\resultsdir tables/macros}
+
+\newcommand{\KL}{\mathrm{KL}}
+\newcommand{\figorbox}[2]{\IfFileExists{\resultsdir figures/#1.pdf}{\includegraphics[width=#2]{\resultsdir figures/#1.pdf}}{\fbox{\parbox{0.9\columnwidth}{\centering\small figure #1: not available yet}}}}
+
+\title{Does the Cache Forget? Top-$k$ Teacher Caching Sharpens Distilled Students but Loses Tail Identity\ifcourse\\\normalsize Course project report\fi}
+
+\author{Sabuhi Aghayev \and Ilkin Mammadli}
+
+\begin{document}
+\maketitle
+
+% =====================================================================================================
+\begin{abstract}
+Distilling a large language model on limited compute usually means caching only the teacher's top-$k$ next-token
+probabilities. We ask what this routine choice does to what the student \emph{generates}. Distilling
+SmolLM2-1.7B-Instruct into SmolLM2-135M on Dolly with seven teacher-signal formats, three training seeds and a
+pre-registered matched-temperature test, we find that top-$k$ caching makes students sharper: at the default
+sampling temperature a top-8 student is \SemDivDropPct\% less diverse, has higher reference overlap and teacher
+compatibility, and has $\times$\ECERatio{} the next-token calibration error of full distillation, at statistically
+equivalent greedy ROUGE-L, monotonically in $k$. This is not a fixed loss of diversity: at matched reference overlap
+the pre-registered test does not support a residual deficit, and the point estimates favour the top-8 student. What
+caching loses is the identity of the tail. Restoring only the amount of tail mass, with a ghost token or even spread
+uniformly, recovers diversity and calibration but not within-tail KL, and only partly rare-token prediction;
+random-sampling distillation recovers both. All claims are for one model family and one training set.
+\end{abstract}
+
+% =====================================================================================================
+\section{Introduction}
+
+Knowledge distillation (KD) trains a small \emph{student} to imitate a larger \emph{teacher}
+\citep{hinton2015distilling}. For language models, token-level KD matches the student's next-token distribution to
+the teacher's at every position of a training sequence. When compute is limited the teacher cannot run next to
+the student at every step, so its outputs are computed once and \emph{cached}. A full distribution over a
+49k-token vocabulary is too large to store for millions of positions, so practitioners keep only the teacher's
+top-$k$ probabilities and renormalise them, with $k$ chosen for convenience \citep{offlinetopk2026,topkgradient2026}.
+
+Prior work established that this truncation is biased: renormalised top-$k$ targets are not an unbiased estimate of
+the teacher \citep{anshumann2025sparse}, and they give no gradient to the student's probability mass outside the
+cached set, so that mass drifts \citep{topkgradient2026}. These studies measure loss, accuracy and calibration.
+What the student \emph{generates} has not been measured. A student trained to put all its mass on the teacher's
+top-$k$ tokens could become systematically sharper: less diverse in what it writes, less faithful to the teacher's
+uncertainty, and worse on rare tokens that live in the teacher's tail. If so, top-$k$ caching is a hidden source
+of the output homogenisation that recent work attributes to distillation \citep{quantdistill2025}.
+
+We study this directly. We distil SmolLM2-1.7B-Instruct into SmolLM2-135M on databricks-dolly-15k with seven
+teacher-signal formats (gold-token SFT, sequence-level KD, renormalised top-$k$ for $k\in\{8,32,128\}$, top-$k$
+plus a tail bucket, random-sampling KD, and full-vocabulary KD), each with forward and reverse KL where defined,
+identical data order, steps and learning rate, and three training seeds. Our contributions:
+\begin{enumerate}
+\item \textbf{A measurement of what top-$k$ caching changes in generation.} Top-8 caching reduces sampled
+  diversity and worsens calibration despite similar greedy ROUGE-L, with a monotone dose--response in $k$
+  (\S\ref{sec:main}); the effect survives length controls (\S\ref{sec:length}).
+\item \textbf{A matched-temperature test, pre-registered.} Because top-8 samples are sharper, we select sampling
+  temperatures on validation so that both students have equal reference overlap and compare diversity on test
+  with a paired bootstrap and a decision rule fixed before the runs (\S\ref{sec:temp}). A residual diversity deficit
+  is not supported: at matched reference overlap the top-8 student is, if anything, more diverse.
+\item \textbf{Tail amount vs.\ tail identity.} Using the decomposition of the KL from \citet{dasgupta2026tad}, we
+  show that restoring how much mass the student puts outside the cache (ghost token, or a uniform spread) does not
+  restore which tail tokens receive it; RS-KD's approximation fidelity extends to the generation endpoints measured
+  (\S\ref{sec:tail}).
+\item \textbf{Open, reproducible code on one 8\,GB GPU}, with every run logged, including failures (reverse KL
+  from the base checkpoint does not terminate; \S\ref{sec:rkl}).
+\end{enumerate}
+
+% =====================================================================================================
+\section{Background and related work}
+
+\paragraph{Token-level KD and the divergence.} Forward KL, $\KL(p\Vert q)$, is mass-covering; reverse KL,
+$\KL(q\Vert p)$, is mode-seeking and was proposed for LLM distillation by MiniLLM \citep{gu2024minillm}; DistiLLM
+uses a skewed KL \citep{ko2024distillm}. Several works report that reverse KL reduces output diversity and add
+forward-KL terms or modify the gradient \citep{jin2026eopd,luong2026drkl}. These studies vary the divergence; we
+vary the \emph{format of the cached teacher signal} and its interaction with the divergence.
+
+\paragraph{Sparse and cached-logit KD.} \citet{anshumann2025sparse} show that caching top-$k$ probabilities biases
+the teacher estimate and harms calibration, and propose Random Sampling KD (RS-KD): draw tokens from the teacher and
+train on their empirical frequencies, unbiased in expectation. They also define a ``ghost token'' that collects
+the teacher's leftover mass as one extra class; the same $(k{+}1)$-way construction appears in TAD
+\citep{dasgupta2026tad} and, for on-policy reverse KL, in TA-OPD \citep{huang2026taopd}. \citet{topkgradient2026}
+prove that renormalised top-$k$ KD gives zero gradient along tail-controlling directions and show tail-mass drift.
+None of these works measures output diversity, the tail coverage of generations, or long-tail behaviour; this is
+the gap we address. We use the ghost token and RS-KD as baselines, not as contributions.
+
+\paragraph{Homogenisation and long-tail knowledge.} Distillation homogenises models \citep{quantdistill2025}, and
+long-tail facts are learned poorly \citep{kandpal2023longtail,mallen2023popqa}. We probe token-level tail behaviour
+and, exploratorily, factual recall by entity popularity.
+
+% =====================================================================================================
+\section{Method}\label{sec:method}
+
+Let $x$ be a prompt and $y$ a response. At response position $t$ let $p=p(\cdot\mid x,y_{<t})$ be the teacher's and
+$q=q_\theta(\cdot\mid x,y_{<t})$ the student's next-token distribution over the vocabulary $V$ ($|V|=49{,}152$).
+Losses are averaged over response tokens. All equations are unit-tested against hand calculations on a 4-token
+vocabulary.
+
+\subsection{Teacher-signal formats (arms)}\label{sec:arms}
+Let $T$ be the teacher's $k$ most probable tokens at a position, $p(T)=\sum_{i\in T}p_i$, and
+$\hat p_i=p_i/p(T)$ for $i\in T$.
+\begin{itemize}
+\item \textbf{SFT}: $-\log q(y_t)$ on the gold response. \textbf{Seq-KD} \citep{kim2016seqkd}: the same on the
+  teacher's greedy response.
+\item \textbf{Full KD} (online): FKL $\sum_{i\in V}p_i\log\frac{p_i}{q_i}$; RKL $\sum_{i\in V}q_i\log\frac{q_i}{p_i}$.
+\item \textbf{Top-$k$}, $k\in\{8,32,128\}$: FKL $\sum_{i\in T}\hat p_i\log\frac{\hat p_i}{q_i}$ with the student's
+  \emph{full} softmax $q$, so the zero target outside $T$ pushes the student's tail mass towards zero. RKL
+  renormalises both sides on $T$: $\KL(\hat q\Vert\hat p)=\sum_{i\in T}\hat q_i\log\frac{\hat q_i}{\hat p_i}$ with
+  $\hat q_i=q_i/q(T)$; it is invariant to the student's logits outside $T$ and gives no gradient to its tail mass.
+  Top-$k$ RKL is run at $k\in\{8,128\}$.
+\item \textbf{Tail bucket} (ghost token; \citealp{anshumann2025sparse,dasgupta2026tad,huang2026taopd}), $k=8$:
+  $(k{+}1)$-way distributions $\tilde p=(p_T,\,1-p(T))$ and $\tilde q=(q_T,\,1-q(T))$; FKL $\KL(\tilde p\Vert\tilde q)$,
+  RKL $\KL(\tilde q\Vert\tilde p)$. It costs one extra number per position.
+\item \textbf{RS-KD} \citep{anshumann2025sparse}: $N=50$ tokens drawn from the teacher at temperature 1,
+  $\hat p_i=c_i/N$ with draw counts $c_i$; FKL $\KL(\hat p\Vert q)$ with the student's full softmax. A
+  support-restricted reverse KL is biased (a once-drawn token receives target mass $\ge 1/N$), so RS-KD is run with
+  forward KL only.
+\item \textbf{Uniform tail} (allocation diagnostic, \S\ref{sec:tail}), $k=8$, FKL only: target $p_i$ on $T$ and the
+  exact tail mass $1-p(T)$ spread uniformly over the other $|V|-k$ tokens.
+\end{itemize}
+
+\subsection{Cache and alignment}\label{sec:cache}
+One teacher pass over the training responses stores, per response position, the top-128 probabilities (fp32),
+their token ids, the exact leftover mass $1-p(T)$ computed in log space (no $1-\sum$ cancellation), and the 50
+RS-KD draws. Smaller $k$ are slices of the same cache with the tail mass of ranks $k{+}1..128$ added back. The
+teacher sees its chat template and the student the Alpaca/MiniLLM prompt; the \emph{same response token ids} are
+appended to both (the models share one tokenizer), so the cache is indexed by exactly the response positions the
+student is trained on. The cache is keyed by each example's prompt prefix and response ids and verified against
+the training encodings before every run. \textbf{Online full KD uses the same prefixes, the same response masks
+and the same positions}: the teacher runs on the identical teacher-side encoding during training, and its targets
+go through the same top-$k$/slice code path as the cache, so an arm trained online and the same arm trained from
+the cache differ only by floating-point rounding (checked in tests).
+
+\subsection{Why a tail bucket restores amount but not identity}\label{sec:decomp}
+For any set $T$, forward KL decomposes exactly (chain rule; the decomposition behind TAD, \citealp{dasgupta2026tad}):
+\begin{equation}
+\begin{aligned}
+\KL(p\Vert q)={}&\KL(\tilde p\Vert\tilde q)\\
+&+p(\bar T)\,\KL\big(p_{\mid\bar T}\,\Vert\,q_{\mid\bar T}\big),
+\end{aligned}
+\label{eq:decomp}
+\end{equation}
+where $\bar T=V{\setminus}T$ and $p_{\mid\bar T}=p(\cdot\mid\bar T)$ renormalises the teacher over the tail
+(likewise $q_{\mid\bar T}$). The tail bucket optimises the first term
+only: it matches \emph{how much} mass the student puts in the tail but leaves \emph{which} tail tokens receive it
+untrained. Plain top-$k$ FKL optimises neither tail quantity; RS-KD's sampled targets include tail tokens
+individually and estimate both terms. We therefore measure tail \emph{amount} (student mass outside the teacher's
+top-8) and tail \emph{identity} separately. \textbf{Within-tail KL} is the last factor of Eq.~\ref{eq:decomp},
+computed at every held-out position from the full teacher and student logits: both are renormalised over
+$V{\setminus}T_8$ (masking the teacher's top-8 ids, log-sum-exp over the rest) and the KL is averaged over
+positions. The amount/identity split was chosen after seeing seed 1; seeds 2--3 serve as its confirmation.
+
+% =====================================================================================================
+\section{Experimental setup}\label{sec:setup}
+
+\paragraph{Models and data.} Teacher: SmolLM2-1.7B-Instruct (bf16). Student: SmolLM2-135M (base). Data:
+databricks-dolly-15k following MiniLLM's protocol (prompts over 256 student tokens dropped, sequences cut at 512
+tokens): 500 test and 1,000 validation examples, and 11,221 training examples after removing training items that
+share an instruction or context with validation or test. Out-of-distribution test sets: Self-Instruct (242) and
+Vicuna (80) prompts from MiniLLM's release.
+
+\paragraph{Training and learning-rate selection.} Identical for every arm: AdamW (weight decay 0.01), batch 16,
+3 epochs (2,106 steps), 5\% warm-up then linear decay, gradient clipping 1.0, fp32 weights with bf16 autocast and
+an fp32 output layer, temperature 1, pure KD loss (no added cross-entropy). The learning rate was chosen once, on
+validation only: SFT and full-KD FKL were trained on 2,000 examples at $\{1,2,3\}\times10^{-4}$ and the rate with
+the best mean greedy validation ROUGE-L ($2\times10^{-4}$) was frozen for every arm before the main grid. Seeds 1,
+2, 3. One RTX 4060 laptop GPU (8\,GB).
+
+\paragraph{Evaluation.}\label{sec:eval}
+\textbf{Reference overlap}: ROUGE-L (MiniLLM normalisation) of the greedy response and the mean over 8 samples.
+\textbf{Diversity}: 8 samples per prompt at temperature 1 with no top-$k$/top-$p$ truncation (which would hide
+exactly the tail we study): semantic diversity (mean pairwise cosine distance of all-MiniLM-L6-v2 embeddings),
+Self-BLEU and distinct-2. \textbf{Teacher compatibility}: the teacher's mean log-likelihood per token of the
+student's samples (reference-free). \textbf{Calibration} (teacher-forced on held-out gold responses): at each
+position the student's confidence is its maximum next-token probability and it is correct if the argmax equals
+the \emph{gold next token}; ECE is the position-weighted mean $|\text{accuracy}-\text{confidence}|$ over 15
+equal-width confidence bins; we also report accuracy, NLL of the gold token and the multi-class Brier score
+(Table~\ref{tab:calibration}, appendix). \textbf{Rare-token loss}: the student's NLL of gold tokens that occur fewer
+than 10 times in the training responses and not in the prompt. \textbf{Long-tail knowledge} (exploratory): PopQA
+accuracy by popularity quintile on the 2,444 questions the teacher answers correctly.
+
+\paragraph{Endpoints and statistics.} Main contrast: top-8 vs.\ full KD, forward KL, Dolly test. We report mean
+$\pm$ std over training seeds, per-seed effects, and a two-level (seed $\times$ prompt) paired bootstrap; ``no
+difference'' in greedy ROUGE-L is claimed only within a $\pm1.0$ equivalence margin (90\% interval, two one-sided
+tests).
+
+% =====================================================================================================
+\section{Results}
+
+\subsection{Top-$k$ truncation reduces sampled diversity despite similar greedy ROUGE-L}\label{sec:main}
+
+\input{\resultsdir tables/main_test}
+
+Table~\ref{tab:main} gives the main grid. Relative to full KD, the top-8 student's greedy ROUGE-L differs by
+\DiffRougeG{} points (90\% interval \GreedyCI{}, \GreedyEquiv{} the $\pm1.0$ margin), while its semantic diversity
+is \TopEightSemDiv{} against \FullSemDiv{} (\SemDivDropPct\% lower), Self-BLEU is \TopEightSelfBleu{} against
+\FullSelfBleu{}, ECE is \TopEightECE{} against \FullECE{} ($\times$\ECERatio), and rare-token loss is \TopEightRare{}
+against \FullRare{}. Sampled quality is \emph{not} matched: top-8 samples have higher reference overlap
+(\DiffRougeS{}) and higher teacher compatibility (\DiffCompat{} nats/token), i.e.\ the top-8 student is sharper;
+\S\ref{sec:temp} therefore matches the samples' reference overlap before comparing diversity. Every metric moves
+monotonically with $k$ (Figure~\ref{fig:dose}), and seed-to-seed standard deviations of semantic diversity (at most
+\MaxSemDivStd{}) are an order of magnitude smaller than the top-8 vs.\ full gap (Table~\ref{tab:effects}). For
+reference, the teacher's semantic diversity is \TeacherSemDiv{} and the untrained base student's \BaseSemDiv{}:
+a 135M student is more dispersed than its teacher, so higher diversity is not automatically better.
+
+\begin{figure}[t]\centering
+\figorbox{dose}{\columnwidth}
+\caption{Dose--response in the cached $k$ (forward KL, Dolly test, mean $\pm$ std over seeds), with full KD,
+RS-KD and the tail bucket as reference lines.}\label{fig:dose}
+\end{figure}
+
+\input{\resultsdir tables/effects_test}
+
+\subsection{The effect is not an artefact of answer length}\label{sec:length}
+Top-8 samples are not systematically shorter in a way that explains the gap: on the first 32 words of every sample
+\LenKeptFirst\% of the semantic-diversity gap remains, and on finished samples only \LenKeptFinished\%
+(Table~\ref{tab:length}, appendix).
+
+\subsection{Matched temperatures}\label{sec:temp}
+
+\paragraph{Pre-registered design.} Before any of these runs, we fixed the following in the experiment log. On the
+first 300 validation prompts (seed-1 students, 8 samples), top-8 is sampled at $T\in\{1.0,1.15,1.3,1.5\}$ and full
+KD at $T\in\{0.7,0.85,1.0\}$. $T^\star_{\text{top-8}}$ is the top-8 temperature whose reference overlap is closest
+to full KD at $T{=}1$, and $T^\star_{\text{full}}$ the full-KD temperature closest to top-8 at $T{=}1$; if the target
+is not bracketed one extra step of 0.15 is added once, and nothing is extrapolated. On Dolly test (training seeds
+1--2) we compare \textbf{A} (primary): top-8 at $T^\star_{\text{top-8}}$ vs.\ full KD at 1.0, and \textbf{B}: top-8 at
+1.0 vs.\ full KD at $T^\star_{\text{full}}$. Per prompt we average each arm's 8-sample value over the two seeds and
+take the paired difference; 10,000 bootstrap resamples of the 500 prompt IDs give 95\% intervals. Reference
+overlap is equivalent if its interval lies within $\pm1.0$. Outcome (a), a \emph{residual deficit}: quality
+equivalent and the semantic-diversity interval entirely below $-0.010$. Outcome (b), \emph{recovered by
+temperature}: quality equivalent and the interval inside $\pm0.010$. Otherwise inconclusive. The headline is A's
+verdict unless B gives the opposite conclusive verdict.
+
+\input{\resultsdir tables/tempsel}
+
+\paragraph{Result.} The selection gave $T^\star_{\text{top-8}}=\TTopStar$ and $T^\star_{\text{full}}=\TFullStar$
+(Table~\ref{tab:tempsel}). In comparison A reference overlap is equivalent (difference \MatchAReferenceOverlap{},
+95\% CI \MatchAReferenceOverlapCI{}) and the semantic-diversity difference is \MatchASemanticDiversity{}
+\MatchASemanticDiversityCI{}; comparison B gives \MatchBReferenceOverlap{} \MatchBReferenceOverlapCI{} and
+\MatchBSemanticDiversity{} \MatchBSemanticDiversityCI{}. Table~\ref{tab:matched} and Figure~\ref{fig:temp} give all
+secondary measures (Self-BLEU, teacher compatibility, finish rate, length) and the sensitivity margins.
+
+\paragraph{Interpretation.} Outcome (a), a residual diversity deficit, is \textbf{not supported}: in both comparisons
+the diversity interval lies entirely \emph{above} zero, i.e.\ at matched reference overlap the top-8 student is more
+diverse than full KD, and Self-BLEU agrees. Because the pre-registered rule defines only a deficit and equivalence
+within $\pm0.010$, an interval above $+0.010$ is formally inconclusive. Part of the excess is explained by the small
+remaining quality difference (top-8 has slightly lower reference overlap in both comparisons). In an
+\emph{exploratory, post-hoc} adjustment (not pre-registered) we subtract full KD's own diversity-per-ROUGE-L slope on
+test (\AdjSlope{}, chord between its $T{=}0.85$ and $T{=}1$ points) times the reference-overlap difference: the
+adjusted diversity difference is \AdjA{} for A and \AdjB{} for B, i.e.\ approximately zero. At the level of
+generations, top-$k$ caching therefore shifts the student along the quality--diversity frontier (it is sharper)
+rather than below it; the teacher-forced differences in calibration and tail identity (\S\ref{sec:tail}) are not
+affected by sampling temperature.
+
+\begin{figure*}[t]\centering
+\figorbox{temperature}{0.85\textwidth}
+\caption{Left: validation temperature selection (seed 1), reference overlap vs.\ semantic diversity, labels are
+sampling temperatures. Right: matched test comparisons A and B (top-8 minus full KD) with 95\% paired-bootstrap
+intervals; shaded: the $\pm1.0$ quality and $\pm0.010$ diversity margins.}\label{fig:temp}
+\end{figure*}
+
+\input{\resultsdir tables/matched}
+
+\subsection{The ghost token restores tail amount, not tail identity}\label{sec:tail}
+
+\input{\resultsdir tables/recovery}
+
+Table~\ref{tab:recovery} expresses each arm as the share of the top-8$\to$full gap it closes, per metric. The tail
+bucket closes \RecTBAmount\% of the gap in tail amount (student mass outside the teacher's top-8) but only
+\RecTBWithinTail\% of the gap in within-tail KL and \RecTBRare\% of the gap in rare-token loss; for semantic
+diversity it closes \RecTBSemDiv\%, for Self-BLEU \RecTBSelfBleu\% and for ECE \RecTBECE\%. RS-KD closes
+\RecRSAmount\% (tail amount), \RecRSWithinTail\% (within-tail KL), \RecRSRare\% (rare-token loss), \RecRSSemDiv\%
+(semantic diversity), \RecRSSelfBleu\% (Self-BLEU) and \RecRSECE\% (ECE): its approximation fidelity extends to the
+generation endpoints measured. This is the pattern Eq.~\ref{eq:decomp} predicts. The uniform-tail diagnostic (Table~\ref{tab:uniform}; \textbf{seed 1 only}) gives the student the exact tail
+\emph{amount} but spread uniformly, i.e.\ with no tail identity. It raises tail amount (\UniAmount{} vs.\
+\UTopAmount{} for top-8 and \UFullAmount{} for full KD), raises semantic diversity beyond full KD (\UniSemDiv{} vs.\
+\UFullSemDiv{}) and lowers ECE (\UniECE{} vs.\ \UFullECE{}), but leaves within-tail KL where top-8 has it
+(\UniWithinKL{} vs.\ \UTopWithinKL{}; full KD \UFullWithinKL{}) and only partly improves rare-token loss (\UniRare{}
+vs.\ \UTopRare{}; full KD \UFullRare{}). Diversity and calibration thus respond to the amount of tail mass;
+within-tail KL and, largely, rare-token prediction need the teacher's tail identity.
+
+\subsection{Forward vs.\ reverse KL}\label{sec:rkl}
+From the base checkpoint, reverse-KL students do not learn to end their responses: the finish rate of full-KD RKL
+samples is \FinishRKLBase{} (Table~\ref{tab:main}), so their diversity numbers are not comparable and we report them
+as a documented failure. We therefore test the divergence interaction from the same-seed SFT student
+(``MiniLLM-style'' initialisation) in a matched $2\times4$ design (FKL/RKL $\times$ top-8, top-128, tail bucket,
+full; Table~\ref{tab:ablation-sft}; seeds 1--2). There the full-KD RKL finish rate is \FinishRKLSFT{}, but top-8
+RKL still does not terminate (finish rate \FinishTopEightRKLSFT{}). Its semantic diversity (\SFTTopEightRKLSemDiv{}
+vs.\ \SFTFullRKLSemDiv{} for full-KD RKL) is therefore measured on unfinished, length-capped samples and is
+\emph{not comparable}; we do not draw a top-$k$ $\times$ divergence conclusion from it. Under FKL from SFT
+initialisation the main-grid pattern repeats (top-8 \SFTTopEightSemDiv{} vs.\ full KD \SFTFullSemDiv{}).
+
+\subsection{Cross-entropy, out-of-distribution prompts and PopQA}
+Adding gold-token cross-entropy (weight 0.5; Table~\ref{tab:ablation-ce}, seeds 1--2) makes both students much
+more competent (greedy ROUGE-L \CETopEightRougeG{} for top-8 and \CEFullRougeG{} for full KD, against about 18.6 with
+pure KD), and the gaps persist: semantic diversity \CETopEightSemDiv{} vs.\ \CEFullSemDiv{} and ECE \CETopEightECE{}
+vs.\ \CEFullECE{}. On Self-Instruct and Vicuna (Table~\ref{tab:external}) the ordering of semantic diversity is the
+same as on Dolly (top-8 $<$ top-128 $\approx$ tail bucket $<$ RS-KD $\approx$ full KD; e.g.\ top-8 \SITopEightSemDiv{}
+vs.\ full \SIFullSemDiv{} on Self-Instruct, \VicTopEightSemDiv{} vs.\ \VicFullSemDiv{} on Vicuna). The PopQA probe
+(Table~\ref{tab:popqa}) shows no difference between cache formats: Dolly carries few rare facts, so this null is
+uninformative about long-tail \emph{knowledge}; the fact-independent rare-token loss above is our long-tail
+measurement.
+
+% =====================================================================================================
+\section{Conclusion}
+Caching only the teacher's top-$k$ probabilities is not neutral for what a distilled student generates. In one
+model family on one instruction dataset, a top-8 cache made the student sharper: less diverse at the default
+temperature, worse calibrated and worse on rare tokens, at equivalent greedy ROUGE-L. The sharpening is not a fixed
+loss of diversity: at matched reference overlap a residual deficit was not supported. What the cache loses is the
+identity of the tail. Restoring only the tail amount, with a ghost token or a uniform spread, recovers diversity and
+calibration but not within-tail KL and only partly rare-token prediction; random-sampling distillation was the only
+cached format that matched full KD across the endpoints we measured.
+
+% =====================================================================================================
+\section*{Limitations}
+\begin{itemize}
+\item \textbf{One model family, one training set.} SmolLM2-1.7B-Instruct $\to$ SmolLM2-135M, trained on Dolly only;
+  all claims are scoped to this setting. We do not know whether the effects grow or shrink with student size or
+  other families.
+\item \textbf{No task with several verifiable answers.} Diversity is measured by embedding distance and $n$-gram
+  overlap; we do not show that the extra diversity of full KD is \emph{useful}, and higher diversity is not
+  automatically better for a 135M student that is more dispersed than its teacher.
+\item \textbf{Reverse KL from the base checkpoint fails} (responses do not terminate); the divergence interaction is
+  tested only from SFT initialisation, with two seeds.
+\item \textbf{PopQA is null} and uninformative about long-tail knowledge on a dataset with few rare facts.
+\item \textbf{Post-hoc split.} The tail amount/identity split was chosen after seeing seed 1 (seeds 2--3 confirm
+  it), and the primary endpoints were declared after seeds 1--2.
+\item \textbf{The matched comparison} uses temperatures selected on one seed, two training seeds on test, and a
+  prompt-level bootstrap that conditions on those seeds (seed variance is not in its interval).
+\item One learning rate, tuned on SFT and forward KL; reverse-KL arms may be disadvantaged.
+\item \textbf{Calibration} differences may be largely fixable by post-hoc temperature scaling of the student's
+  logits, which we did not test.
+\item The quality adjustment of \S\ref{sec:temp} is exploratory and post-hoc.
+\end{itemize}
+
+\section*{Ethics and reproducibility}
+All data and models are public. Code, configurations, every run (including failed runs) and the pre-registration
+log are released with the paper.
+
+\IfFileExists{acl.sty}{}{\bibliographystyle{plainnat}}% acl.sty sets acl_natbib itself
+\bibliography{references}
+
+% =====================================================================================================
+\appendix
+\section{Additional tables}\label{sec:appendix}
+\input{\resultsdir tables/calibration}
+\input{\resultsdir tables/length}
+\input{\resultsdir tables/external}
+\input{\resultsdir tables/ablation_ce}
+\input{\resultsdir tables/ablation_sft}
+\input{\resultsdir tables/diag_uniform}
+\input{\resultsdir tables/popqa}
+
+\begin{figure}[t]\centering
+\figorbox{reliability_test}{\columnwidth}
+\caption{Reliability diagram (Dolly test, seed 1, forward KL): confidence (maximum next-token probability) vs.\
+accuracy (argmax = gold token), bins with at least 30 positions.}\label{fig:reliability}
+\end{figure}
+
+\section{Run accounting}
+Every trained run, evaluation and failure is recorded in \texttt{runs/results.jsonl}, \texttt{runs/evals.jsonl} and
+\texttt{runs/failed.jsonl}; the experiment log lists every incident and decision with its date. The temperature
+selection and matched comparisons were pre-registered on 19 October 2026 before any of their runs (commit
+57a44f4).
+
+\end{document}

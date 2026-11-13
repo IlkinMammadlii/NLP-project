@@ -1,0 +1,184 @@
+<title>What the Students Write</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; a prompt bar on top, model answers in a wrapping grid below. */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --fg:#1b2230; --muted:#5d6676; --line:#dde1e8;
+  --teacher:#2563b8; --student:#d9741c; --tail:#c2257a; --gold:#3f7d4e;
+  --teacher-soft:#e6eefa; --student-soft:#fbefe3; --tail-soft:#fbe6f1; --gold-soft:#e7f2ea;
+  --display:"Fraunces",Georgia,serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12161d; --panel:#1a2029; --fg:#e7eaf0; --muted:#9aa3b2; --line:#2c3440;
+  --teacher:#6ea3ef; --student:#f0a05a; --tail:#ec6cb3; --gold:#7cc28e;
+  --teacher-soft:#1d2a3e; --student-soft:#33261a; --tail-soft:#371d2c; --gold-soft:#1c2e22; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12161d; --panel:#1a2029; --fg:#e7eaf0; --muted:#9aa3b2; --line:#2c3440;
+  --teacher:#6ea3ef; --student:#f0a05a; --tail:#ec6cb3; --gold:#7cc28e;
+  --teacher-soft:#1d2a3e; --student-soft:#33261a; --tail-soft:#371d2c; --gold-soft:#1c2e22; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:28px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+h1{font:650 clamp(26px,4vw,38px)/1.15 var(--display);margin:0;text-wrap:balance}
+h2{font:600 20px/1.3 var(--display);margin:0}
+p{margin:0}
+.lede{color:var(--muted);max-width:68ch}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+.tab{font:500 14px var(--body);background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:8px 12px;cursor:pointer}
+.tab[aria-selected="true"]{color:var(--fg);border-color:var(--student)}
+.tab:focus-visible,button:focus-visible,select:focus-visible{outline:2px solid var(--teacher);outline-offset:2px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.bar select{font:14px var(--body);padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);max-width:100%;min-width:0;flex:1 1 280px}
+.btn{font:500 13px var(--body);padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--fg);cursor:pointer}
+.btn[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.label{font:500 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.prompt{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.prompt .q{font:600 17px/1.4 var(--body)}
+.prompt details{color:var(--muted);font-size:14px}
+.prompt summary{cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0;border-top:3px solid var(--student)}
+.card.teacher{border-top-color:var(--teacher)} .card.gold{border-top-color:var(--gold)}
+.card h3{margin:0;font:600 14px var(--body);display:flex;justify-content:space-between;gap:8px}
+.card h3 span{font:400 12px var(--mono);color:var(--muted)}
+.txt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;max-height:340px;overflow:auto}
+.sample+.sample{border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
+.sample .n{font:500 11px var(--mono);color:var(--muted)}
+.note{font-size:13px;color:var(--muted);max-width:80ch}
+.peek{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ctx{font:14px/1.6 var(--mono);overflow-wrap:anywhere}
+.ctx .g{background:var(--gold-soft);color:var(--gold);padding:1px 4px;border-radius:4px;font-weight:500}
+.tblwrap{overflow-x:auto}
+table{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;min-width:640px;width:100%}
+th,td{padding:5px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+th{font:500 12px var(--body);color:var(--muted)}
+th.t{color:var(--teacher)} th.s{color:var(--student)}
+td.tok{font-family:var(--mono)}
+tr.tailrow td{background:var(--tail-soft)}
+tr.tailrow td:nth-child(2){color:var(--tail);font-weight:500}
+tr.goldrow td.tok{color:var(--gold);font-weight:600}
+tr.sum td{font-weight:600;border-top:2px solid var(--line)}
+.cell{position:relative}
+.cell i{position:absolute;left:0;bottom:2px;height:3px;background:currentColor;opacity:.35;border-radius:2px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:var(--muted)}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+@media (max-width:520px){.grid{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:10px">
+    <div class="label">Does the cache forget? · examples</div>
+    <h1>What the students actually write</h1>
+    <p class="lede">The same test prompts answered by the 1.7B teacher and by 135M students trained with different teacher signals. Nothing here is hand-picked: prompts are a fixed random draw from the 500-item test set.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tab-gen" aria-selected="true">Side-by-side answers</button>
+    <button class="tab" role="tab" id="tab-peek" aria-selected="false">Inside one prediction</button>
+  </nav>
+
+  <section id="view-gen" style="display:flex;flex-direction:column;gap:16px">
+    <div class="bar">
+      <button class="btn" id="prev" aria-label="Previous prompt">←</button>
+      <select id="pick" aria-label="Choose a prompt"></select>
+      <button class="btn" id="next" aria-label="Next prompt">→</button>
+      <span style="flex-basis:100%;height:0"></span>
+      <button class="btn" id="m-greedy" aria-pressed="true">Greedy answer</button>
+      <button class="btn" id="m-samples" aria-pressed="false">3 random samples (T = 1)</button>
+    </div>
+    <div class="prompt" id="prompt"></div>
+    <div class="grid" id="grid"></div>
+    <p class="note" id="gen-note"></p>
+  </section>
+
+  <section id="view-peek" hidden style="display:flex;flex-direction:column;gap:16px">
+    <p class="lede">Each card is one position in a real test answer, scored with the gold text as input. The gold next word sits <b>outside the teacher's top 8</b>, so a top-8 cache never shows it to the student. The rows show what probability each model gives to the teacher's top 16 words there.</p>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--teacher)"></i>Teacher</span>
+      <span><i class="sw" style="background:var(--student)"></i>Students (135M)</span>
+      <span><i class="sw" style="background:var(--tail-soft);outline:1px solid var(--tail)"></i>Teacher ranks 9–16: the tail a top-8 cache deletes</span>
+      <span><i class="sw" style="background:var(--gold)"></i>The gold word</span>
+    </div>
+    <div class="bar">
+      <button class="btn" id="pprev" aria-label="Previous position">←</button>
+      <select id="ppick" aria-label="Choose a position"></select>
+      <button class="btn" id="pnext" aria-label="Next position">→</button>
+    </div>
+    <div id="peek"></div>
+    <p class="note" id="peek-note"></p>
+  </section>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const SIZE = {"Teacher (1.7B)":"1.7B"};
+let gi = 0, mode = "greedy", pi = 0;
+
+// ---- side-by-side generations
+const G = DATA.generations;
+G.forEach((g, i) => $("pick").add(new Option(`${i + 1}. ${g.instruction.slice(0, 90)}`, i)));
+function renderGen(){
+  const g = G[gi];
+  $("pick").value = gi;
+  $("prompt").innerHTML = `<div class="label">Prompt ${gi + 1} of ${G.length}${g.category ? " · " + esc(g.category.replace(/_/g, " ")) : ""}</div>
+    <div class="q">${esc(g.instruction)}</div>
+    ${g.context ? `<details><summary>Context given with the prompt</summary><p class="txt" style="max-height:none">${esc(g.context)}</p></details>` : ""}`;
+  const cards = [`<article class="card gold"><h3>Human reference (Dolly)<span>gold</span></h3><div class="txt">${esc(g.gold)}</div></article>`];
+  for (const [m, o] of Object.entries(g.outputs)) {
+    const isT = m.startsWith("Teacher");
+    const body = mode === "greedy" ? `<div class="txt">${esc(o.greedy)}</div>`
+      : `<div class="txt">${o.samples.map((s, k) => `<div class="sample"><div class="n">sample ${k + 1}</div>${esc(s)}</div>`).join("")}</div>`;
+    cards.push(`<article class="card ${isT ? "teacher" : ""}"><h3>${esc(m)}<span>${isT ? "1.7B" : "135M"}</span></h3>${body}</article>`);
+  }
+  $("grid").innerHTML = cards.join("");
+}
+$("pick").onchange = e => { gi = +e.target.value; renderGen(); };
+$("prev").onclick = () => { gi = (gi - 1 + G.length) % G.length; renderGen(); };
+$("next").onclick = () => { gi = (gi + 1) % G.length; renderGen(); };
+function setMode(m){ mode = m; $("m-greedy").setAttribute("aria-pressed", m === "greedy"); $("m-samples").setAttribute("aria-pressed", m === "samples"); renderGen(); }
+$("m-greedy").onclick = () => setMode("greedy");
+$("m-samples").onclick = () => setMode("samples");
+$("gen-note").textContent = `Source: ${DATA.notes.prompts}. Sampling: ${DATA.notes.samples}. Answers are cut at 256 tokens, so some end mid-sentence. All students: same data, steps and learning rate; only the teacher signal differs.`;
+
+// ---- tail peek
+const P = DATA.tail_peek;
+const MODELS = ["Teacher", "Full KD", "Top-8 cache", "Tail bucket (k=8)", "RS-KD"];
+const fmt = p => p >= 0.0995 ? (100 * p).toFixed(1) + "%" : p >= 0.000995 ? (100 * p).toFixed(2) + "%" : p > 0 ? "<0.1‰" : "0";
+P.forEach((p, i) => $("ppick").add(new Option(`${i + 1}. …${p.context_before.slice(-40)} ▸ "${p.gold_token.trim()}"`, i)));
+function renderPeek(){
+  const p = P[pi];
+  $("ppick").value = pi;
+  const max = Math.max(...p.tokens.flatMap(t => MODELS.map(m => t.p[m])));
+  const rows = p.tokens.map(t => {
+    const cls = (t.teacher_rank > 8 ? "tailrow " : "") + (t.is_gold ? "goldrow" : "");
+    const cells = MODELS.map((m, k) => `<td class="cell" style="color:var(${k ? "--student" : "--teacher"})"><span style="color:var(--fg)">${fmt(t.p[m])}</span><i style="width:${Math.max(1, 100 * t.p[m] / max)}%"></i></td>`).join("");
+    return `<tr class="${cls}"><td class="tok">${esc(JSON.stringify(t.tok))}${t.is_gold ? " ◂ gold" : ""}</td><td>${t.teacher_rank}</td>${cells}</tr>`;
+  }).join("");
+  const sum = `<tr class="sum"><td colspan="2">Total mass outside the teacher's top 8</td>${MODELS.map(m => `<td>${(100 * p.mass_outside_teacher_top8[m]).toFixed(1)}%</td>`).join("")}</tr>`;
+  $("peek").innerHTML = `<article class="peek">
+    <div class="label">Position ${pi + 1} of ${P.length} · prompt: ${esc(p.instruction.slice(0, 110))}</div>
+    <div class="ctx">…${esc(p.context_before)}<span class="g">${esc(p.gold_token)}</span></div>
+    <p class="note">The gold word is the teacher's #${p.gold_rank} choice here.</p>
+    <div class="tblwrap"><table>
+      <thead><tr><th>next word</th><th>teacher rank</th>${MODELS.map((m, k) => `<th class="${k ? "s" : "t"}">${esc(m)}</th>`).join("")}</tr></thead>
+      <tbody>${rows}${sum}</tbody></table></div></article>`;
+}
+$("ppick").onchange = e => { pi = +e.target.value; renderPeek(); };
+$("pprev").onclick = () => { pi = (pi - 1 + P.length) % P.length; renderPeek(); };
+$("pnext").onclick = () => { pi = (pi + 1) % P.length; renderPeek(); };
+$("peek-note").textContent = `Selection: ${DATA.notes.peek}. Seed-1 students. These are single positions: they show what the effect looks like, and the averages over all test tokens are in the paper. Student probabilities are computed with the student's own prompt format, so small shifts are normal.`;
+
+// ---- tabs
+function show(which){
+  $("tab-gen").setAttribute("aria-selected", which === "gen");
+  $("tab-peek").setAttribute("aria-selected", which === "peek");
+  $("view-gen").hidden = which !== "gen";
+  $("view-peek").hidden = which !== "peek";
+}
+$("tab-gen").onclick = () => show("gen");
+$("tab-peek").onclick = () => show("peek");
+renderGen(); renderPeek();
+</script>

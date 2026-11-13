@@ -1,0 +1,39 @@
+WHAT THE CACHE FORGETS - update, Monday 19 Oct 2026, 09:10
+================================================================
+
+STATUS
+- 26 of 56 students done, no failures. Seeds 1 and 2 complete; seed 3 running.
+- Expected finish: Wednesday 21 Oct, morning (~07:00-10:00).
+- Two interruptions, nothing lost except the student in progress: app restart at 00:05 (~35 min),
+  laptop on battery 07:52-09:00 (slowed, ~1 h). Both logged in EXPERIMENT_LOG.md.
+
+RESULTS: forward KL, Dolly test, mean +/- std over seeds 1-2
+                     Top-8         Top-32        Top-128       Tail bucket   RS-KD         Full teacher
+Quality (ROUGE-L)    18.6          18.6          18.7          18.6          18.6          18.8
+Variety (sem. div.)  .316 +/- .000 .340 +/- .004 .351 +/- .003 .349 +/- .002 .368 +/- .002 .369 +/- .001
+Calibration (ECE)    .107 +/- .002 .076 +/- .001 .065 +/- .000 .069 +/- .002 .059 +/- .001 .057 +/- .002
+Rare-token loss      5.32          5.03          4.88          5.02          4.78          4.75
+
+1) H1 confirmed on two seeds: top-8 caching costs ~14% of the full teacher's variety (.316 vs .369)
+   and nearly doubles calibration error (.107 vs .057), with no change in ROUGE-L. Seed spread
+   (<= .004) is >10x smaller than the gaps. Order holds on every metric:
+   top-8 < top-32 < top-128 ~ tail bucket < RS-KD ~ full.
+
+2) Amount vs identity (your request: seeds 2-3 as confirmation) - seed 2 reproduces seed 1:
+   Share of the top-8 -> full gap closed     tail AMOUNT    tail IDENTITY (within-tail KL / rare-token loss)
+   Tail bucket, seed 1                       74%            51% / 53%
+   Tail bucket, seed 2                       75%            52% / 53%
+   RS-KD, seed 1                             97%            94% / 95%
+   RS-KD, seed 2                             98%            93% / 94%
+   -> the ghost token restores how much probability the tail gets, but only about half of which
+      tokens get it; RS-KD restores both. Seed 3 is the final check.
+
+3) Baselines stable over 3 seeds: SFT ROUGE-L 27.5 / variety .393; seq-KD variety .248 (lowest),
+   ECE .257 (worst).
+
+4) Length control (done earlier): H1 order holds on the first 32 words and on finished samples only
+   (Dolly test, Self-Instruct; Vicuna finished-only too small to use). Details in FINDINGS.md.
+
+STILL TO COME
+- Seed 3 of the cache arms (today) -> 3-seed table.
+- KD+CE ablation (4 runs) and the matched 2x4 SFT-init design for H3 (16 runs): Tue-Wed.

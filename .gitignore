@@ -1,0 +1,21 @@
+# data, caches, checkpoints and run outputs live under $CF_ROOT (default ./cf_data)
+cf_data*/
+*.npy
+*.bin
+*.safetensors
+__pycache__/
+*.pyc
+.venv/
+.env
+*.zip
+
+# paper build outputs
+paper/acl/*.aux
+paper/acl/*.log
+paper/acl/*.bbl
+paper/acl/*.blg
+paper/acl/*.fls
+paper/acl/*.fdb_latexmk
+paper/acl/*.out
+paper/acl/*.pdf
+paper_overleaf.zip

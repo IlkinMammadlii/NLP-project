@@ -1,0 +1,16 @@
+# Install PyTorch with CUDA first:  pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cu128
+# then:  pip install -r requirements.txt     (exact versions used: requirements.lock.txt)
+transformers==5.20.0
+accelerate
+bitsandbytes
+datasets
+sentencepiece
+tokenizers
+rouge-score
+nltk
+sentence-transformers
+sacrebleu
+scipy
+pandas
+matplotlib
+tabulate

@@ -1,0 +1,70 @@
+WHAT THE CACHE FORGETS - TRAINING SUMMARY
+Sunday 18 October 2026, 08:20
+Authors: Sabuhi Aghayev, Ilkin Mammadli
+======================================================================
+
+STATUS
+------
+- 9 of 44 students finished (trained and tested).
+- No failures since the grid started cleanly on Saturday 19:20.
+- Now running: student 10, random-sampling cache (forward KL, seed 1).
+- Expected finish of everything: about Tuesday 20 October, 22:00
+  (ahead of the first estimate: cached runs take ~35 min, not 45).
+- GPU: 70-81 C, under 5 GB of memory.
+
+
+TIMELINE SO FAR
+---------------
+Sat 18:36-19:20   Two launch problems, both fixed, results not affected:
+                  - the cache pass ran out of GPU memory (now done in chunks);
+                  - seq-KD crashed during a Word conversion and then ran 3x slow
+                    from memory spill (fixed with a preallocated teacher cache).
+Sat 18:39-18:46   Teacher cache built: 870,417 tokens, top-128 probabilities, 1 GB.
+Sat 19:20-21:10   Teacher wrote answers to all 11,221 training prompts (seq-KD data).
+Sat 21:10-22:40   Teacher tested on Dolly test, Self-Instruct and Vicuna;
+                  untrained base model scored on PopQA (19.7%).
+Sat 22:40 -> now  Students trained one after another: 35-45 min training
+                  + ~45 min testing each, peak GPU memory 2.7-3.7 GB.
+
+
+RESULTS SO FAR (seed 1, Dolly test set)
+---------------------------------------
+
+1) Caching fewer teacher probabilities makes students less varied and worse
+   calibrated, with no change in quality (H1).
+
+   Forward KL               Top-8    Top-32   Top-128   Top-8 + tail bucket
+   Quality (ROUGE-L)         18.5     18.4     18.4      18.4
+   Variety (semantic div.)   0.316    0.337    0.349     0.348
+   Repetitiveness (S-BLEU)   13.8     11.1     10.0      10.2
+   Tail coverage             0.52     0.61     0.64      0.61
+   Calibration error (ECE)   0.106    0.075    0.065     0.068
+
+   Every diversity and calibration measure moves in order as k grows.
+
+2) The existing tail-bucket ("ghost token") fix recovers almost all of it (H4).
+   One extra number per token makes top-8 behave like top-128. It restores the
+   AMOUNT of tail mass, but less of WHICH tail tokens get it.
+
+3) Reverse KL from the base model fails to stop generating: about 1% of
+   answers end. Top-8 RKL produces noisy text. Expected; reported as decided.
+
+4) Seq-KD is the least varied and worst calibrated student (ECE 0.257).
+   SFT has the highest ROUGE-L (27.6) because it copies Dolly's short answers.
+
+5) PopQA shows no difference between cache sizes (48-49%). Exploratory; likely
+   because Dolly contains too few rare facts.
+
+
+STILL MISSING
+-------------
+- Full KD (no cache), the key reference: today ~15:00-16:00 (forward KL)
+  and ~19:00 (reverse KL). This completes seed 1.
+- Seeds 2-3 (Mon-Tue): to confirm the pattern with mean +/- std.
+- Ablations (Tue): KD + CE, and SFT-initialised students.
+
+
+CAVEAT
+------
+Everything above is ONE seed. The pattern is very clean and matches the pilot,
+but it is not a claim until seeds 2 and 3 agree.
