@@ -321,7 +321,7 @@ def implementation_blocks() -> list:
     out = [{"type": "h1", "text": "Implementation", "numbered": True},
            P("The experiments were run with a Python pipeline driven by one command-line script. Every trained "
              "run, evaluation and failure was logged with its configuration, code version, run time and peak GPU "
-             "memory."),
+             "memory. The full code, with the generated tables and figures, is public at " + REPO_URL + "."),
            {"type": "h2", "text": "What one training run does"},
            {"type": "list", "ordered": True, "items": [[{"t": s}] for s in steps]},
            rich("The script ", ("distill_clean.py", "mono"), ", submitted with this report,"
@@ -407,6 +407,8 @@ def summary_blocks() -> list:
             ]}]
 
 
+REPO_URL = "https://github.com/IlkinMammadlii/NLP-project"  # public repository (authors, 13 Nov)
+
 # The report names only what its reader can open: the submitted files (distill_clean.py, EXAMPLES.md). The paper's
 # pointers to repository files, log files, a commit hash and a code release are reworded here (authors, 13 Nov).
 SUBMISSION_EDITS = [
@@ -414,7 +416,8 @@ SUBMISSION_EDITS = [
     ("we fixed the following in the experiment log.", "we fixed the following in writing."),
     ("All data and models are public. Code, configurations, every run (including failed runs) and the pre-registration "
      "log are released with the paper.",
-     "All data and models are public. The training code is submitted with this report (distill_clean.py)."),
+     "All data and models are public. The training code is submitted with this report (distill_clean.py), and the "
+     "full code is at " + REPO_URL + "."),
     ("Every trained run, evaluation and failure is recorded in runs/results.jsonl, runs/evals.jsonl and "
      "runs/failed.jsonl; the experiment log lists every incident and decision with its date. The temperature selection "
      "and matched comparisons were pre-registered on 19 October 2026 before any of their runs (commit 57a44f4).",

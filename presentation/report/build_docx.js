@@ -4,7 +4,7 @@ const fs = require("fs");
 const path = require("path");
 const {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, Table, TableRow, TableCell, WidthType,
-  ShadingType, BorderStyle, ImageRun, TableOfContents, Footer, PageNumber, LevelFormat, PageBreak, TabStopType,
+  ShadingType, BorderStyle, ImageRun, ExternalHyperlink, TableOfContents, Footer, PageNumber, LevelFormat, PageBreak, TabStopType,
 } = require("docx");
 
 const ROOT = path.resolve(__dirname, "..", "..");
@@ -162,6 +162,8 @@ const title = [
     children: [new TextRun({ text: C.subtitle, font: HEAD, size: 30, color: COL.muted })] }),
   new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: C.authors, size: 26, bold: true })] }),
   new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: "November 2026", size: 24, color: COL.muted })] }),
+  new Paragraph({ spacing: { after: 120 }, children: [new TextRun({ text: "Code: ", size: 22, bold: true }),
+    new ExternalHyperlink({ link: "https://github.com/IlkinMammadlii/NLP-project", children: [new TextRun({ text: "https://github.com/IlkinMammadlii/NLP-project", size: 22, style: "Hyperlink", color: COL.teacher, underline: {} })] })] }),
   new Paragraph({ spacing: { before: 1600 }, children: [new TextRun({ text: "Teacher: SmolLM2-1.7B-Instruct   ·   Student: SmolLM2-135M   ·   Data: databricks-dolly-15k   ·   Hardware: one 8 GB laptop GPU", size: 20, color: COL.muted })] }),
   new Paragraph({ children: [new PageBreak()] }),
   new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: "Contents", font: HEAD, size: 32, bold: true })] }),
